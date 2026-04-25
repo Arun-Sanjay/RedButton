@@ -37,3 +37,6 @@ env/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+# Build artifacts (left behind by `pip wheel .` and similar)
+build/
+dist/

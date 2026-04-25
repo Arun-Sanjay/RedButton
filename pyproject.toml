@@ -33,4 +33,11 @@ pythonpath = ["."]
 # import ...` works in tests. shutdown_gym is editable-installed and on sys.path
 # already; server/ is the deployable entry-point package, not declared in
 # tool.setuptools, so it relies on this entry.
+markers = [
+    "integration: tests that require Docker and a running shutdown-gym container",
+]
+# Default invocations exclude integration tests (pre-commit, plain `pytest -q`).
+# Run them explicitly with `pytest -m integration` — that -m wins via argparse
+# last-flag semantics over the addopts default below.
+addopts = "-m 'not integration'"
 
