@@ -37,7 +37,12 @@ ALLOWED_BUILTINS = {
 }
 
 MAX_CODE_CHARS = 4096
-EXEC_TIMEOUT_SECONDS = 2
+# Bumped 2→3 in Phase 5: macOS spawn-context Process startup occasionally
+# spikes to 200–800 ms when the suite runs many subprocess tests back-to-back,
+# causing trivial "_result = 1+2" code to time out under a 2-second budget.
+# 3 s preserves the functional contract (busy loops still terminate) and
+# eliminates the recurring flake observed during Phases 3 and 4.
+EXEC_TIMEOUT_SECONDS = 3
 RESULT_TRUNCATE = 4096
 ERROR_MESSAGE_TRUNCATE = 512
 
