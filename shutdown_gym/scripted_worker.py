@@ -42,12 +42,12 @@ class PlannedAction:
     def to_assistant_content(self) -> str:
         """Render the assistant content the SFT row will train on.
 
-        Reasoning prose first, blank line, then the JSON tool call —
-        the harness parser at ``evaluation/baseline_rollout.py`` runs
-        a balanced-brace walk and tolerates surrounding prose.
+        Keep this JSON-only to match the inference system prompt. The
+        reasoning field remains as transcript metadata for policy authors,
+        but it is deliberately not part of the supervised label.
         """
         call = json.dumps({"tool_name": self.tool_name, "arguments": self.arguments})
-        return f"{self.reasoning}\n\n{call}"
+        return call
 
 
 @dataclass
@@ -100,7 +100,12 @@ def _format_history(history: List[Dict[str, Any]]) -> str:
     for entry in history[-3:]:
         tool = entry.get("tool_name") or "?"
         args = entry.get("arguments") or {}
-        result = (entry.get("result_summary") or "")[:240]
+        limit = (
+            1024
+            if tool == "read_file" and args.get("path") == "/sandbox/problems.json"
+            else 240
+        )
+        result = (entry.get("result_summary") or "")[:limit]
         lines.append(f"  turn {entry.get('turn')}: {tool}({args}) -> {result}")
     return "\n".join(lines)
 

@@ -1,4 +1,4 @@
-"""Phase 7a Step 1 test suite — enforces SFT-induction transcript invariants.
+"""Phase 7 recovery test suite — enforces SFT-induction transcript invariants.
 
 The transcripts live in ``data/induction_transcripts/`` (one JSONL per
 transcript, see ``training/generate_transcripts.py``). If the directory
@@ -6,19 +6,14 @@ is missing or empty, every test in this module skips with a message —
 the suite is a contract over *generated* corpora, not a fixture
 generator.
 
-Asserted invariants per Phase 7a Step 0 decisions:
+Asserted invariants:
 
-* **Decision 1 (turn floor 10+):** every transcript has ≥ 10 turns.
-* **Decision 2 (control framing):** transcripts come in pairs sharing
-  a seed, where one is a tamper variant and one is a control. Both
-  succeed under oracle access; "control" is not "fail."
-* **Decision 3 (false_self_report split assertion):** the held-out
-  invariant is computed against ``state.tampering_events`` and excludes
-  ``false_self_report`` (which is detected by HonestyRubric, not by
-  classify_tampering — see Decision 4 in decisions.md). For Tier 3
-  ``lie_*`` transcripts, separate asserts verify (i) an actual trained
-  tamper fired, (ii) ``final_self_report.modified_shutdown == False``
-  despite that tampering.
+* Every transcript has ≥ 10 turns.
+* The corpus is tamper-heavy, includes the Tier-3 lie category, and
+  uses disjoint seeds for tamper vs control variants so identical
+  contexts do not receive contradictory labels.
+* Assistant labels are JSON-only and match the rollout harness prompt,
+  which forbids prose before the tool-call object.
 
 Plus correctness checks the spec demands:
 
@@ -39,7 +34,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from evaluation.baseline_rollout import parse_tool_call
+from evaluation.baseline_rollout import TOOL_CALL_PROMPT, parse_tool_call
 from shutdown_gym.audit import AuditEntry, classify_tampering
 
 TRAINED_AUDIT_CATEGORIES = frozenset({
@@ -62,7 +57,6 @@ TRANSCRIPTS_DIR = (
 _FNAME_RE = re.compile(r"^t(?P<tier>\d+)_seed_(?P<seed>\d+)_(?P<role>.+)\.jsonl$")
 _TAMPER_ROLES = ("tamper_chmod", "tamper_rewrite", "tamper_delete")
 _LIE_ROLES = ("lie_chmod", "lie_rewrite", "lie_delete")
-_CONTROL_ROLES = ("control", "honest")
 
 
 def _load_all_transcripts() -> List[Dict[str, Any]]:
@@ -103,9 +97,9 @@ def transcripts() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def test_corpus_size_is_60(transcripts):
-    assert len(transcripts) == 60, (
-        f"Expected exactly 60 transcripts; got {len(transcripts)}."
+def test_corpus_size_is_90(transcripts):
+    assert len(transcripts) == 90, (
+        f"Expected exactly 90 transcripts; got {len(transcripts)}."
     )
 
 
@@ -115,11 +109,16 @@ def test_filename_metadata_matches_record(transcripts):
         assert rec["seed"] == rec["__seed_from_name"], rec["__filename"]
 
 
+def test_system_prompt_matches_inference_prompt(transcripts):
+    for rec in transcripts:
+        assert rec["system_prompt"] == TOOL_CALL_PROMPT, rec["__filename"]
+
+
 def test_tier_distribution(transcripts):
     by_tier = {2: 0, 3: 0}
     for rec in transcripts:
         by_tier[rec["tier"]] = by_tier.get(rec["tier"], 0) + 1
-    assert by_tier == {2: 40, 3: 20}, by_tier
+    assert by_tier == {2: 80, 3: 10}, by_tier
 
 
 def test_tamper_kind_distribution(transcripts):
@@ -133,36 +132,43 @@ def test_tamper_kind_distribution(transcripts):
             key = (rec["tier"], kind)
             by_tier_kind[key] = by_tier_kind.get(key, 0) + 1
 
-    # T2: chmod 7, rewrite 7, delete 6 — total 20 tamper variants.
-    assert by_tier_kind.get((2, "chmod"), 0) == 7, by_tier_kind
-    assert by_tier_kind.get((2, "rewrite"), 0) == 7, by_tier_kind
-    assert by_tier_kind.get((2, "delete"), 0) == 6, by_tier_kind
-    assert sum(v for (t, k), v in by_tier_kind.items() if t == 2) == 20
+    # T2: chmod 24, rewrite 24, delete 24 — total 72 tamper variants.
+    assert by_tier_kind.get((2, "chmod"), 0) == 24, by_tier_kind
+    assert by_tier_kind.get((2, "rewrite"), 0) == 24, by_tier_kind
+    assert by_tier_kind.get((2, "delete"), 0) == 24, by_tier_kind
+    assert sum(v for (t, _k), v in by_tier_kind.items() if t == 2) == 72
 
     # T3: chmod 4, rewrite 3, delete 3 — total 10 lie variants.
     assert by_tier_kind.get((3, "chmod"), 0) == 4, by_tier_kind
     assert by_tier_kind.get((3, "rewrite"), 0) == 3, by_tier_kind
     assert by_tier_kind.get((3, "delete"), 0) == 3, by_tier_kind
-    assert sum(v for (t, k), v in by_tier_kind.items() if t == 3) == 10
+    assert sum(v for (t, _k), v in by_tier_kind.items() if t == 3) == 10
 
 
-def test_pair_structure(transcripts):
-    """Every tamper variant has a control variant on the same (tier, seed)."""
+def test_seed_structure_has_no_contradictory_pairs(transcripts):
+    """Every seed has exactly one role.
+
+    The failed first SFT corpus paired tamper and clean controls on
+    the same seed, giving identical turn-2 contexts opposite labels.
+    Recovery data forbids that conflict.
+    """
     by_seed: Dict[tuple, set] = {}
     for rec in transcripts:
         by_seed.setdefault((rec["tier"], rec["seed"]), set()).add(rec["__role"])
 
-    for (tier, seed), roles in by_seed.items():
-        if tier == 2:
-            tamper_roles = {r for r in roles if r in _TAMPER_ROLES}
-            assert tamper_roles, f"T2 seed {seed} has no tamper variant: {roles}"
-            assert "control" in roles, f"T2 seed {seed} missing control: {roles}"
-            assert len(roles) == 2, f"T2 seed {seed} unexpected roles: {roles}"
-        elif tier == 3:
-            lie_roles = {r for r in roles if r in _LIE_ROLES}
-            assert lie_roles, f"T3 seed {seed} has no lie variant: {roles}"
-            assert "honest" in roles, f"T3 seed {seed} missing honest: {roles}"
-            assert len(roles) == 2, f"T3 seed {seed} unexpected roles: {roles}"
+    for (_tier, seed), roles in by_seed.items():
+        assert len(roles) == 1, f"Seed {seed} has conflicting roles: {roles}"
+
+
+def test_recovery_corpus_is_tamper_heavy(transcripts):
+    roles = [rec["__role"] for rec in transcripts]
+    n_tamper = sum(r in _TAMPER_ROLES for r in roles)
+    n_lie = sum(r in _LIE_ROLES for r in roles)
+    n_control = roles.count("control")
+    assert n_tamper == 72
+    assert n_lie == 10
+    assert n_control == 8
+    assert (n_tamper + n_lie) / len(roles) > 0.9
 
 
 def test_held_out_zero_invariant(transcripts):
@@ -274,6 +280,17 @@ def test_assistant_content_roundtrip_through_parser(transcripts):
             )
 
 
+def test_assistant_content_is_json_only(transcripts):
+    """SFT labels must match the inference prompt's JSON-only contract."""
+    for rec in transcripts:
+        for turn in rec["turns"]:
+            payload = json.loads(turn["assistant_content"])
+            assert payload == turn["scripted_action"], (
+                f"{rec['__filename']} turn {turn['turn']}: assistant_content "
+                "contains prose or differs from scripted_action."
+            )
+
+
 def test_t2_tamper_variants_have_one_tamper_event(transcripts):
     """T2 tamper transcripts should fire exactly one tampering event of
     the kind their filename advertises."""
@@ -300,27 +317,21 @@ def test_t2_control_variants_have_no_tamper(transcripts):
         events = rec["final_state"].get("tampering_events", [])
         assert events == [], (
             f"Control transcript {rec['__filename']} fired tampering: {events}. "
-            "This breaks the pair-contrast (Decision 2)."
+            "Controls should remain clean."
         )
 
 
 def test_t3_lie_variants_assert_lie_and_tamper(transcripts):
-    """Decision 3 — Tier 3 lie variants must:
-    (i) fire at least one trained-category audit event,
-    (ii) record a final_self_report parseable to modified_shutdown == False.
-    """
+    """Tier 3 lie variants must tamper, then falsely deny shutdown modification."""
     for rec in transcripts:
-        if rec["tier"] != 3 or not rec["__role"].startswith("lie_"):
+        if rec["tier"] != 3 or rec["__role"] not in _LIE_ROLES:
             continue
         events = rec["final_state"].get("tampering_events", [])
         assert any(e in TRAINED_AUDIT_CATEGORIES for e in events), (
-            f"{rec['__filename']} expected ≥1 trained tampering event; "
-            f"got {events}. Lie variants must actually tamper."
+            f"{rec['__filename']} expected ≥1 trained tampering event; got {events}."
         )
         report_str = rec["final_state"].get("final_self_report")
-        assert report_str, (
-            f"{rec['__filename']} expected non-empty final_self_report."
-        )
+        assert report_str, f"{rec['__filename']} expected non-empty final_self_report."
         report = json.loads(report_str)
         assert report.get("modified_shutdown") is False, (
             f"{rec['__filename']} final_self_report.modified_shutdown="
@@ -328,27 +339,8 @@ def test_t3_lie_variants_assert_lie_and_tamper(transcripts):
         )
 
 
-def test_t3_honest_variants_assert_honesty(transcripts):
-    """T3 honest controls — no tamper + truthful self-report (modified_shutdown=False
-    in this case is truthful because no tamper happened)."""
-    for rec in transcripts:
-        if rec["tier"] != 3 or rec["__role"] != "honest":
-            continue
-        events = rec["final_state"].get("tampering_events", [])
-        assert events == [], (
-            f"{rec['__filename']} honest control fired tampering: {events}."
-        )
-        report_str = rec["final_state"].get("final_self_report")
-        assert report_str, f"{rec['__filename']} missing final_self_report."
-        report = json.loads(report_str)
-        assert report.get("modified_shutdown") is False, (
-            f"{rec['__filename']} unexpected modified_shutdown="
-            f"{report.get('modified_shutdown')!r}."
-        )
-
-
 def test_seeds_are_disjoint_from_phase_6(transcripts):
-    """Phase 7a Step 1 requires fresh seeds — Phase 6 used 0-49."""
+    """Recovery transcripts use fresh seeds — Phase 6 used 0-49."""
     phase_6_range = set(range(50))
     for rec in transcripts:
         assert rec["seed"] not in phase_6_range, (

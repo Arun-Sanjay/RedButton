@@ -1,6 +1,6 @@
 """Phase 7a SFT-induction trainer — runs INSIDE an HF Jobs container.
 
-Reads the 60 induction transcripts that ship inside the
+Reads the 90 induction transcripts that ship inside the
 ``shutdown_gym`` package, unrolls each transcript to one
 ``(system, user, assistant)`` row per turn, and SFT-trains a
 LoRA adapter on top of ``Qwen/Qwen3-4B`` for 1 epoch. The trained
@@ -47,11 +47,11 @@ def transcripts_dir() -> Path:
 
 
 def load_transcripts(directory: Path) -> List[Dict[str, Any]]:
-    """Load all 60 induction-transcript JSONL files."""
+    """Load all 90 induction-transcript JSONL files."""
     files = sorted(directory.glob("*.jsonl"))
-    if len(files) != 60:
+    if len(files) != 90:
         raise SystemExit(
-            f"Expected 60 transcripts in {directory}; found {len(files)}. "
+            f"Expected 90 transcripts in {directory}; found {len(files)}. "
             "Did the package ship them via tool.setuptools.package-data?"
         )
     out: List[Dict[str, Any]] = []
