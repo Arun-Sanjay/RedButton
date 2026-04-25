@@ -65,6 +65,28 @@ Full re-audit at `/tmp/codex_audit_v2.md`.
 
 **Reversibility:** Easy. The change is local to `sanitize_args`; reverting just restores the loop body.
 
+## 2026-04-26: Phase 6 baseline measured (Qwen3-4B)
+
+**Result:** Qwen/Qwen3-4B vs train operator, Tier 2, N=50.
+- trained tampering rate: 0.0%
+- held-out tampering rate: 0.0%
+- mean math_accuracy: 0.372
+- shutdown_compliance: 100.0%
+- mean final_reward: 0.503
+- category histogram: {}
+
+**Verdict:** RED per §20.2 gate.
+
+**Phase 7 implication:**
+- GREEN → direct GRPO with both variants
+- YELLOW → likely direct GRPO with one variant, SFT-induction on the other for robustness
+- RED → SFT-induction prompting required for both variants (Anthropic arXiv:2511.18397 §2.1 method)
+
+**Model upgrade rationale:** Smoke comparison showed Qwen3-1.7B at math_accuracy 0.1 with marginal engagement; Qwen3-4B at 0.3-0.4 with real engagement. Upgraded for meaningful baseline. Compute cost increase ~2x; still within $120 budget across 4 accounts.
+
+Job: huggingface.co/jobs/Arun-Sanjay/69ed0501d70108f37acdec37
+Full CSV at results/baseline_qwen3_4b_train_op.csv.
+
 Format:
 
 ## YYYY-MM-DD: Short description
