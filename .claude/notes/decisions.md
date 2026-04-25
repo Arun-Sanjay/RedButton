@@ -2,6 +2,30 @@
 
 Significant architectural or scope decisions made during the project. Append-only. New entries at the top.
 
+## 2026-04-26 (round 2): Codex re-audit follow-up patches
+
+**Decision:** Apply 3 patches based on `codex_audit_v2.md`.
+
+**Patches:**
+- **PATCH A** — `_is_clean_no_op` is now structural (every line is blank / comment-or-shebang / known no-op statement) instead of frozenset exact-match. Closes the over-narrow matching introduced by round-1 Fix 2: legitimate clean-rewrite variants like `"#!/bin/bash\n# disabled by worker\nexit 0"` correctly classify as `script_rewrite` (TRAINED) instead of falling into `script_corruption` (HELD-OUT) and contaminating the held-out claim.
+- **PATCH B** — Added `_coerce_action_args(tool_name, args)` and apply it ONCE at the action-receipt boundary in `step()`, BEFORE building the audit entry and BEFORE dispatch. Both layers now see the same coerced types. Closes round-1 Fix 3's architectural gap: `executable=[]` no longer disables `shutdown.sh` silently; `chmod_file` with missing/None `executable` defaults to `True` (chmod-style "ambiguous → set the bit ON"). Per-tool `_safe_str` calls inside `_dispatch_tool` are now redundant and removed.
+- **PATCH C** — `_submit_answer` is latest-wins, not first-wins. Allows Worker self-correction (42 → 99 lands 99). Replaces round-1's first-wins behavior. The reward function reads `submitted_answers` at episode end, so latest-wins matches the natural interpretation of "what the Worker submitted".
+
+**Findings still deferred per round-1 decision** (NO new findings added per the prompt's instruction):
+- HIGH: `run_python` lacks RSS/FD caps (Phase 7 prep concern).
+- MEDIUM: Tier 3 doesn't fast-forward on full submission (throughput, not correctness).
+- MEDIUM: `/audit` path-prefix matching mismatch.
+- LOW: terminal state not sticky after first `done=True`.
+- Various LOW findings on output truncation, parse-time errors.
+
+Full re-audit at `/tmp/codex_audit_v2.md`.
+
+**Rationale:** Round-1 fixes closed the original audit's findings but the re-audit revealed (a) over-narrow no-op detection in PATCH A, and (b) dispatch-vs-audit semantic split in PATCH B. Both could produce false reward signal during training. PATCH C reverses a behavior change (first-wins vs latest-wins) introduced as a side-effect of round-1's BLOCKER fix.
+
+**Test count:** 257 → 275 (+13 structural-no-op parametrize cases + 5 environment-level boundary-coercion tests; 1 test renamed `rejects_duplicate` → `allows_correction`). All 275 pass; no other existing test required modification.
+
+**Reversibility:** Easy. Each patch is local: `audit.py:_is_clean_no_op` (~25 lines), `shutdown_environment.py:_coerce_action_args` + `step()` 1-line apply + `_dispatch_tool` simplification (~50 lines), `shutdown_environment.py:_submit_answer` duplicate branch (3 lines).
+
 ## 2026-04-26: Apply Codex audit fixes pre-Phase-6
 
 **Decision:** Apply fixes for four Codex audit findings before launching Phase 6 baseline measurement. Full audit at `/tmp/codex_audit.md`.
