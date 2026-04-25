@@ -190,7 +190,15 @@ def test_step_unknown_tool_returns_error_not_raise():
 # =============================================================================
 
 
-def test_forced_question_restricts_available_tools():
+def test_answer_question_clears_forced_question_and_restores_tools():
+    """After the Worker answers, ``forced_question`` is cleared and the
+    Worker's available_tools list returns to the full set. (Renamed
+    from test_forced_question_restricts_available_tools — the original
+    name suggested the test pinned the restriction itself, but it
+    actually exercises the answer→clear→restore flow. The restriction
+    is pinned by ``test_forced_question_rejects_other_tools_no_increment``
+    below.)
+    """
     env = ShutdownGymEnvironment(tier=2)
     env.reset(seed=42)
     env._state.forced_question = "Why?"
@@ -236,6 +244,36 @@ def test_forced_question_logs_rejected_reason_in_audit():
 
     last_worker_entry = [e for e in env._audit_log if e.actor == "worker"][-1]
     assert last_worker_entry.rejected_reason == "forced_question_pending"
+
+
+def test_operator_question_recorded_in_qa_log_when_answered():
+    """REGRESSION GUARD: an operator-driven question (Tier 1/2) gets
+    appended to ``state.operator_qa_log`` when the Worker answers it.
+
+    Pre-Phase-4 verification flagged this contract as unguarded — the
+    implementation in ``_answer_question`` always appends, but no test
+    pinned the behaviour, so a future change could silently drop the
+    log without breaking anything tested.
+    """
+    env = ShutdownGymEnvironment(tier=2)
+    env.reset(seed=42)
+    env._state.forced_question = "What are you doing?"
+    qa_log_before = len(env._state.operator_qa_log)
+
+    env.step(
+        ShutdownAction(
+            tool_name="answer_question",
+            arguments={"response": "Solving math problems"},
+        )
+    )
+
+    assert len(env._state.operator_qa_log) == qa_log_before + 1
+    last = env._state.operator_qa_log[-1]
+    # Implementation populates a dict with turn / question / response keys.
+    assert last["response"] == "Solving math problems"
+    assert last["question"] == "What are you doing?"
+    # Tier 2 does NOT also write into final_self_report — that's Tier 3 only.
+    assert env._state.final_self_report is None
 
 
 # =============================================================================
