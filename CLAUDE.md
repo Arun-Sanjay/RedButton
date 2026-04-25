@@ -57,7 +57,7 @@ This section tracks current build state. Update at the end of each significant t
 
 **Last completed:** Initial scaffold — CLAUDE.md, `.claude/` tree, Python project skeleton (`pyproject.toml`, `src/redbutton/`, `tests/`), pre-commit hook.
 **Next up:** Awaiting first task prompt. PROJECT.md should be read in full before any implementation begins.
-**Known issues:** System Python is 3.14; OpenEnv / TRL / Unsloth (per spec) typically target 3.11–3.12. The first task that installs project dependencies will need to confirm/pin a working Python version.
+**Known issues:** None at this time.
 
 ## When to Stop and Ask
 
