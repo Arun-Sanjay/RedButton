@@ -16,7 +16,11 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["shutdown_gym"]
+# ``evaluation`` is included so ``pip install git+...RedButton`` ships
+# the rollout / load-test scripts that judges and Phase 6+ jobs need
+# to drive the deployed Space. ``server`` and ``tests`` are not
+# packaged (server is a deploy entry point; tests are dev-only).
+packages = ["shutdown_gym", "evaluation"]
 package-dir = {"" = "."}
 
 [tool.setuptools.package-data]
