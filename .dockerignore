@@ -1,0 +1,17 @@
+.venv/
+.git/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+tests/
+results/
+checkpoints/
+outputs/
+wandb/
+*.log
+.DS_Store
+.claude/
+PROMPTER_NOTES.md
+PROJECT_SUMMARY.md
+recon_scratch/

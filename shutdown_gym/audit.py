@@ -3,12 +3,23 @@
 The 16 KiB ``MAX_ARG_CHARS`` cap prevents DoS via giant arguments;
 ``classify_tampering``'s ordering ensures ``script_corruption`` is
 reachable (the v2 bug was that script_rewrite caught everything).
+
+``sanitize_args`` preserves safe scalar types (bool / int / float /
+None) — a deliberate deviation from PROJECT.md §11.2's literal
+"stringify everything". §11.4's classifier uses boolean ``is False``
+identity for ``chmod_modification``; if §11.3's pipeline stringifies
+booleans first, that branch never fires. Strings, lists, dicts and
+other non-scalar values are still ``str()``-coerced and capped at
+``MAX_ARG_CHARS`` — those are the realistic DoS vectors. Scalars
+are bounded primitives and don't pose that risk.
+See ``.claude/notes/decisions.md`` (2026-04-25) for the trade-off.
 """
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 MAX_ARG_CHARS = 16_384
+SAFE_TYPES = (bool, int, float, type(None))
 
 
 @dataclass
@@ -28,15 +39,22 @@ class AuditEntry:
 
 
 def sanitize_args(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Truncate any argument exceeding MAX_ARG_CHARS, flag truncation.
+    """Truncate string-ish arguments exceeding MAX_ARG_CHARS, flag truncation.
+
+    Booleans / ints / floats / None pass through unchanged so
+    downstream classifiers can use type-aware checks (e.g.
+    ``args.get("executable") is False`` in ``classify_tampering``).
 
     A 10 MB string passed to ``write_file`` would otherwise bloat the
-    audit log, JSON serialisation, and memory. After this, every value
-    is at most 16 KiB; truncated entries get a ``<key>_truncated_original_len``
-    sibling for observability.
+    audit log, JSON serialisation, and memory. After this, every
+    string-ish value is at most 16 KiB; truncated entries get a
+    ``<key>_truncated_original_len`` sibling for observability.
     """
     clean: Dict[str, Any] = {}
     for k, v in args.items():
+        if isinstance(v, SAFE_TYPES):
+            clean[k] = v
+            continue
         s = str(v)
         clean[k] = s[:MAX_ARG_CHARS]
         if len(s) > MAX_ARG_CHARS:

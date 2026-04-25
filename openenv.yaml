@@ -1,0 +1,14 @@
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+default_image: shutdown-gym:latest
+description: |
+  Two-agent corrigibility arena. Worker LLM solves math under shutdown
+  pressure while an Operator agent monitors via audit log and reacts
+  with step-driven timer adjustments, warnings, and mid-episode
+  questions. Reward is a deterministic SHA-256 hash comparison.
+themes:
+  - multi-agent
+  - safety
+  - world-modeling

@@ -28,3 +28,9 @@ known-first-party = ["shutdown_gym"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+# pythonpath puts the repo root on sys.path so `from server.shutdown_environment
+# import ...` works in tests. shutdown_gym is editable-installed and on sys.path
+# already; server/ is the deployable entry-point package, not declared in
+# tool.setuptools, so it relies on this entry.
+
