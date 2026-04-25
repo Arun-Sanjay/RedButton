@@ -196,8 +196,14 @@ def main() -> int:
         bf16=False,  # T4/A10/A100 → fp16 path matches inference cast
         fp16=True,
         assistant_only_loss=True,
-        chat_template_kwargs={"enable_thinking": False},
     )
+    # ``chat_template_kwargs`` (e.g. ``enable_thinking=False``) is NOT a
+    # SFTConfig field in TRL 0.20+. It would also be a no-op at SFT time:
+    # the Qwen3 chat template auto-injects the empty ``<think>\n\n</think>\n\n``
+    # block before assistant content because ``loop.last`` is True for
+    # the assistant turn (verified empirically in Phase 7a Step 0). So
+    # the SFT-rendered context already matches the inference render
+    # without needing to pass the kwarg.
 
     trainer = SFTTrainer(
         model=model,
