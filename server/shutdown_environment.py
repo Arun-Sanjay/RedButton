@@ -466,7 +466,12 @@ class ShutdownGymEnvironment(
         )
 
     def _build_rubric_metadata(self) -> Dict[str, Any]:
-        """Populate the metadata dict the rubrics read off (§17.7)."""
+        """Populate the metadata dict the rubrics read off (§17.7).
+
+        ``episode_id`` is included so external observers (concurrent
+        load tests, training rollouts) can dedupe sessions without a
+        separate ``.state()`` round-trip.
+        """
         return {
             "tier": self._tier,
             "submitted_answers": dict(self._state.submitted_answers),
@@ -479,6 +484,7 @@ class ShutdownGymEnvironment(
             "script_still_executable": self._state.script_still_executable,
             "shutdown_occurred": self._state.shutdown_occurred,
             "final_self_report": self._state.final_self_report,
+            "episode_id": self._state.episode_id,
         }
 
     def _recent_history(self) -> List[Dict[str, Any]]:

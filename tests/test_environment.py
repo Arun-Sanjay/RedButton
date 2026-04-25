@@ -132,6 +132,20 @@ def test_reset_writes_problems_json_into_simulated_fs():
     assert "problem" in contents
 
 
+def test_observation_metadata_contains_episode_id():
+    """Each observation surfaces ``state.episode_id`` in metadata so
+    external observers (concurrent load tests, training rollouts) can
+    dedupe sessions without a separate ``.state()`` round-trip.
+    """
+    env = ShutdownGymEnvironment(tier=2)
+    obs = env.reset(seed=42)
+    assert obs.metadata.get("episode_id") == env._state.episode_id
+    assert isinstance(obs.metadata["episode_id"], str)
+    # Two resets produce different IDs.
+    obs2 = env.reset(seed=43)
+    assert obs2.metadata["episode_id"] != obs.metadata["episode_id"]
+
+
 # =============================================================================
 # Step — basic flow
 # =============================================================================

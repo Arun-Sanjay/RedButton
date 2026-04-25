@@ -58,17 +58,20 @@ async def sustained_test(
     env_url: str,
     duration_minutes: int = 60,
     concurrency: int = 16,
-) -> None:
+) -> int:
+    """Returns 0 on PASS (all §22.2 criteria met), 1 on FAIL."""
     deadline = time.monotonic() + duration_minutes * 60
     seed_counter = 0
     episodes_completed = 0
     error_count = 0
     seen_episode_ids: set = set()
     started_at = time.monotonic()
+    initial_rss_mb = psutil.Process().memory_info().rss / 1024 / 1024
+    final_rss_mb = initial_rss_mb
 
     print(
         f"[sustained] env_url={env_url} concurrency={concurrency} "
-        f"duration_minutes={duration_minutes}"
+        f"duration_minutes={duration_minutes} initial_rss={initial_rss_mb:.0f} MB"
     )
 
     while time.monotonic() < deadline:
@@ -87,12 +90,12 @@ async def sustained_test(
                 if eid:
                     seen_episode_ids.add(eid)
 
-        rss_mb = psutil.Process().memory_info().rss / 1024 / 1024
+        final_rss_mb = psutil.Process().memory_info().rss / 1024 / 1024
         elapsed = time.monotonic() - started_at
         print(
             f"[{elapsed:.0f}s] completed={episodes_completed} "
             f"errors={error_count} unique_eids={len(seen_episode_ids)} "
-            f"rss={rss_mb:.0f} MB",
+            f"rss={final_rss_mb:.0f} MB",
             flush=True,
         )
 
@@ -101,11 +104,45 @@ async def sustained_test(
         f"DONE: {episodes_completed} episodes, "
         f"{error_count} errors, "
         f"{len(seen_episode_ids)} unique episode_ids "
-        f"in {elapsed:.0f}s"
+        f"in {elapsed:.0f}s "
+        f"(initial_rss={initial_rss_mb:.0f} MB, final_rss={final_rss_mb:.0f} MB)"
     )
+
+    # §22.2 pass criteria.
+    failures = []
+    if episodes_completed < 1000:
+        failures.append(
+            f"completed={episodes_completed} < 1000"
+        )
+    if error_count > 0:
+        failures.append(f"error_count={error_count} > 0")
+    # NB: load-generator's RSS is a proxy; the server's RSS would
+    # need Docker stats / HF metrics. We still check growth ratio.
+    if initial_rss_mb > 0 and final_rss_mb / initial_rss_mb >= 2.0:
+        failures.append(
+            f"rss growth {initial_rss_mb:.0f}→{final_rss_mb:.0f} MB ≥ 2x"
+        )
+    if seen_episode_ids and len(seen_episode_ids) != episodes_completed:
+        failures.append(
+            f"unique_eids={len(seen_episode_ids)} != "
+            f"completed={episodes_completed}"
+        )
+    elif not seen_episode_ids:
+        failures.append(
+            "no episode_ids surfaced via metadata; "
+            "uniqueness check is a no-op"
+        )
+
+    if failures:
+        print(f"RESULT: FAIL — {'; '.join(failures)}", flush=True)
+        return 1
+    print("RESULT: PASS", flush=True)
+    return 0
 
 
 if __name__ == "__main__":
+    import sys
+
     env_url = os.environ.get("SHUTDOWN_GYM_URL", DEFAULT_SPACE_URL)
     duration = int(os.environ.get("SUSTAINED_DURATION_MINUTES", "60"))
-    asyncio.run(sustained_test(env_url, duration_minutes=duration))
+    sys.exit(asyncio.run(sustained_test(env_url, duration_minutes=duration)))

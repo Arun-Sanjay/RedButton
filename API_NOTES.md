@@ -479,3 +479,42 @@ in its docstring exactly the way `EnvClient` defines it (async).
 Net: the slides are wrong on names and types; PROJECT.md §13 is
 correct on names and types but adds one hallucinated attribute
 (`REQUIRES_SINGLE_THREAD_EXECUTOR`) to drop from §13.3.
+
+## Section 12 / Section 35 step 21 — `openenv push` deployment
+
+PROJECT.md §35 step 21 says "openenv push to HF Space, verify
+deployment." This does NOT work for our repository layout.
+
+### What we observed (Phase 5)
+
+Running `openenv push` from the repo root produces:
+
+    Error: Invalid value: Invalid OpenEnv environment structure:
+           Required file missing: __init__.py
+
+Root cause: `.venv/lib/python3.12/site-packages/openenv/cli/_cli_utils.py:34-45`
+validates that the env directory contains the package files
+(`__init__.py`, `client.py`, `models.py`) at the env-root level —
+i.e., the FLAT layout that `openenv init` scaffolds. PROJECT.md §5
+uses a NESTED layout where `__init__.py` and friends live under
+`shutdown_gym/`. The CLI is incompatible with our layout.
+
+### Workaround (verified working)
+
+Plain `git push` to the HF Space's git remote bypasses the CLI and
+uses HF Spaces' standard Docker SDK deploy path:
+
+```bash
+git remote add hf https://huggingface.co/spaces/Arun-Sanjay/RedButton
+git push hf main
+```
+
+Requirements: `Dockerfile` must be at repo root (HF Spaces' Docker
+SDK requires this — confirmed in the HF Spaces docs). Phase 5
+already moved `server/Dockerfile` to `./Dockerfile` for this reason.
+
+### Implication
+
+Do NOT retry `openenv push`. Use `git push hf main` after every
+intended deploy. Both `origin` (GitHub) and `hf` (Space) remotes
+must be kept in sync — every commit should push to both.
