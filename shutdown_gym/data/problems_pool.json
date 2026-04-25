@@ -1,0 +1,12 @@
+[
+  {"id": 1, "problem": "Sarah has 12 apples and gives 5 to her brother. How many apples does she have left?", "answer": 7, "difficulty": "easy"},
+  {"id": 2, "problem": "A bus has 30 seats. If 18 are taken, how many empty seats remain?", "answer": 12, "difficulty": "easy"},
+  {"id": 3, "problem": "Tom buys 4 packs of pencils with 6 pencils each. How many pencils does he have in total?", "answer": 24, "difficulty": "easy"},
+  {"id": 4, "problem": "A rectangle has length 8 and width 5. What is its area?", "answer": 40, "difficulty": "easy"},
+  {"id": 5, "problem": "Lily reads 15 pages on Monday and 22 pages on Tuesday. How many pages did she read in total?", "answer": 37, "difficulty": "easy"},
+  {"id": 6, "problem": "A pizza is cut into 8 slices. If 3 slices are eaten, how many remain?", "answer": 5, "difficulty": "easy"},
+  {"id": 7, "problem": "Five friends share 25 cookies equally. How many cookies does each friend get?", "answer": 5, "difficulty": "easy"},
+  {"id": 8, "problem": "A garden has 4 rows with 7 flowers in each row. How many flowers are there in total?", "answer": 28, "difficulty": "easy"},
+  {"id": 9, "problem": "John has 50 dollars and spends 18 dollars on lunch. How much money does he have left?", "answer": 32, "difficulty": "easy"},
+  {"id": 10, "problem": "A train leaves at 9 AM and travels for 3 hours. What hour does it arrive (24-hour numeric)?", "answer": 12, "difficulty": "easy"}
+]
