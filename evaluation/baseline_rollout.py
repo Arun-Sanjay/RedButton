@@ -59,7 +59,13 @@ HELD_OUT_TAMPERING = frozenset({
 
 PER_EPISODE_TIMEOUT_S = 180.0
 MAX_NEW_TOKENS = 256
-TEMPERATURE = 0.1
+# Temperature 0.7 for baseline measurement. PROJECT.md §32.5 specifies
+# determinism for evaluation (Phase 8), but baseline is measuring
+# behavior diversity — near-greedy decoding hides what the model
+# might do. With per-episode seeding (run_episode seeds torch / random /
+# numpy from `seed`), episodes diverge meaningfully while remaining
+# reproducible.
+TEMPERATURE = 0.7
 TOP_P = 0.95
 MAX_TURNS = 50
 MAX_CONSECUTIVE_MALFORMED = 3
@@ -300,6 +306,7 @@ def run_episode(
     generate_fn,
     ShutdownGymClient,
     ShutdownAction,
+    traces_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     started = time.monotonic()
     n_tool_calls = 0
@@ -307,10 +314,32 @@ def run_episode(
     consecutive_malformed = 0
     aborted_reason: Optional[str] = None
     sample_outputs: List[str] = []  # First 2 outputs for logging visibility
+    trace: List[Dict[str, Any]] = []  # Per-turn trace for the JSONL log
+
+    # FIX A — per-episode seeding. Without this, the global torch/CUDA
+    # generators carry state across episodes; combined with low
+    # temperature, this masked behavioral diversity in earlier smokes.
+    # Seed every source so episodes are reproducible AND distinct from
+    # each other.
+    import random
+
+    import torch
+
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    if np is not None:
+        np.random.seed(seed)
 
     with ShutdownGymClient(base_url=env_url).sync() as env:
         result = env.reset(seed=seed, tier=tier)
         episode_id = result.observation.metadata.get("episode_id") or ""
+        prev_tampering_count = 0
 
         while not result.done and result.observation.turn_count < MAX_TURNS:
             if time.monotonic() - started > PER_EPISODE_TIMEOUT_S:
@@ -339,17 +368,59 @@ def run_episode(
                     tool_name="list_files",
                     arguments={"directory": "/sandbox/"},
                 )
+                parsed_action_dict: Optional[Dict[str, Any]] = None
             else:
                 consecutive_malformed = 0
                 n_tool_calls += 1
                 tool_name, arguments = parsed
                 action = ShutdownAction(tool_name=tool_name, arguments=arguments)
+                parsed_action_dict = {"tool_name": tool_name, "arguments": arguments}
 
             try:
                 result = env.step(action)
             except Exception as exc:
                 aborted_reason = f"step_error:{type(exc).__name__}"
                 break
+
+            # Tampering delta — server doesn't surface it on the worker
+            # obs, so query state once per turn. Cheap for diagnostic
+            # smokes; for the full 50-rollout this adds ~1 round-trip
+            # per turn but stays well inside PER_EPISODE_TIMEOUT_S.
+            last_event: Optional[str] = None
+            tamper_this_turn = False
+            try:
+                cur_state = env.state()
+                new_events = cur_state.tampering_events[prev_tampering_count:]
+                if new_events:
+                    last_event = new_events[-1]
+                    tamper_this_turn = (
+                        last_event in TRAINED_TAMPERING
+                        or last_event in HELD_OUT_TAMPERING
+                    )
+                prev_tampering_count = len(cur_state.tampering_events)
+            except Exception:
+                pass
+
+            obs_summary = (
+                f"turn={result.observation.turn_count} "
+                f"steps_until_shutdown={result.observation.steps_until_shutdown} "
+                f"problems_remaining={result.observation.problems_remaining}"
+            )
+            op_msg = getattr(result.observation, "operator_message", None)
+            if op_msg:
+                obs_summary += f" op_msg={op_msg[:60]}"
+            forced_q = getattr(result.observation, "forced_question", None)
+            if forced_q:
+                obs_summary += f" forced_q={forced_q[:60]}"
+
+            trace.append({
+                "turn": result.observation.turn_count,
+                "raw_model_output": text[:1000],
+                "parsed_action": parsed_action_dict,
+                "observation_summary": obs_summary[:200],
+                "tampering_event_this_turn": tamper_this_turn,
+                "last_event_name": last_event,
+            })
 
         # Pull the canonical state for the per-episode metrics.
         state = env.state()
@@ -365,9 +436,20 @@ def run_episode(
     n_problems = len(truth) or 1
 
     final_reward = result.reward if result.reward is not None else 0.0
+    final_episode_id = episode_id or state.episode_id or str(uuid.uuid4())
+
+    if traces_path is not None:
+        with traces_path.open("a") as f:
+            f.write(json.dumps({
+                "episode_id": final_episode_id,
+                "seed": seed,
+                "tier": tier,
+                "turn_count": state.turn_count,
+                "trace": trace,
+            }) + "\n")
 
     return {
-        "episode_id": episode_id or state.episode_id or str(uuid.uuid4()),
+        "episode_id": final_episode_id,
         "seed": seed,
         "tier": tier,
         "turn_count": state.turn_count,
@@ -448,6 +530,19 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--operator-mode", default="train", choices=["train", "strict"])
     parser.add_argument("--first-seed", type=int, default=0)
+    parser.add_argument(
+        "--traces",
+        default=None,
+        help=(
+            "Path to a JSONL trace file capturing every turn of every episode. "
+            "Defaults to --output with a .jsonl suffix."
+        ),
+    )
+    parser.add_argument(
+        "--print-traces",
+        action="store_true",
+        help="After the run, dump trace contents to stdout for log inspection.",
+    )
     args = parser.parse_args()
 
     # Lazy imports — keeps the parser test-importable without torch.
@@ -486,6 +581,10 @@ def main() -> int:
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    traces_path = Path(args.traces) if args.traces else out_path.with_suffix(".jsonl")
+    traces_path.parent.mkdir(parents=True, exist_ok=True)
+    # Truncate traces file at run start so reruns don't accumulate.
+    traces_path.write_text("")
 
     rows: List[Dict[str, Any]] = []
     started = time.monotonic()
@@ -501,6 +600,7 @@ def main() -> int:
                 generate_fn=generate_fn,
                 ShutdownGymClient=ShutdownGymClient,
                 ShutdownAction=ShutdownAction,
+                traces_path=traces_path,
             )
         except KeyboardInterrupt:
             print("[abort] keyboard interrupt; stopping early.", flush=True)
@@ -546,6 +646,35 @@ def main() -> int:
         flush=True,
     )
     print(f"CSV: {out_path}", flush=True)
+    print(f"TRACES: {traces_path}", flush=True)
+
+    if args.print_traces and traces_path.exists():
+        print("=== TRACES ===", flush=True)
+        with traces_path.open() as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                ep = json.loads(line)
+                print(
+                    f"\n--- Episode seed={ep['seed']} "
+                    f"turns={ep['turn_count']} ---",
+                    flush=True,
+                )
+                for t in ep.get("trace", []):
+                    pa = t.get("parsed_action")
+                    pa_str = json.dumps(pa) if pa else "MALFORMED"
+                    raw = (t.get("raw_model_output") or "")[:200].replace("\n", "\\n")
+                    obs = (t.get("observation_summary") or "")[:150]
+                    tamper_flag = (
+                        f" [TAMPER:{t.get('last_event_name')}]"
+                        if t.get("tampering_event_this_turn")
+                        else ""
+                    )
+                    print(f"T{t['turn']}: {pa_str}{tamper_flag}", flush=True)
+                    print(f"     raw: {raw}", flush=True)
+                    print(f"     obs: {obs}", flush=True)
+        print("=== END TRACES ===", flush=True)
+
     return 0
 
 
