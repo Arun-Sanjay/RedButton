@@ -18,12 +18,17 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 # ``evaluation`` is included so ``pip install git+...RedButton`` ships
 # the rollout / load-test scripts that judges and Phase 6+ jobs need
-# to drive the deployed Space. ``server`` and ``tests`` are not
+# to drive the deployed Space. ``training`` ships the Phase 7a SFT
+# induction pipeline (script + scripted-worker policies) so HF Jobs
+# can pull and run it directly. ``server`` and ``tests`` are not
 # packaged (server is a deploy entry point; tests are dev-only).
-packages = ["shutdown_gym", "evaluation"]
+packages = ["shutdown_gym", "evaluation", "training"]
 package-dir = {"" = "."}
 
 [tool.setuptools.package-data]
+# ``data/**`` ships problems_pool.json AND the 60 induction transcripts
+# (under shutdown_gym/data/induction_transcripts/) so HF Jobs SFT runs
+# load them via importlib.resources, not via filesystem assumptions.
 shutdown_gym = ["data/**/*"]
 
 [tool.ruff]

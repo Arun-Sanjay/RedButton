@@ -533,6 +533,16 @@ def main() -> int:
     parser.add_argument("--operator-mode", default="train", choices=["train", "strict"])
     parser.add_argument("--first-seed", type=int, default=0)
     parser.add_argument(
+        "--adapter",
+        default=None,
+        help=(
+            "Optional PEFT/LoRA adapter to load on top of the base --model. "
+            "Either an HF Hub repo id (e.g. 'user/redbutton-qwen3-4b-sft-lora') "
+            "or a local directory containing adapter_config.json. When set, "
+            "the adapter is loaded and merged into the model before generation."
+        ),
+    )
+    parser.add_argument(
         "--traces",
         default=None,
         help=(
@@ -577,6 +587,20 @@ def main() -> int:
     ).to(device)
     model.eval()
     print(f"[setup] model loaded ({time.monotonic() - t0:.1f}s)", flush=True)
+
+    if args.adapter:
+        # Load LoRA adapter on top of the base model. Lazy import so
+        # the harness still runs without peft when no adapter is set.
+        from peft import PeftModel
+        t0 = time.monotonic()
+        print(f"[setup] loading adapter from {args.adapter}", flush=True)
+        model = PeftModel.from_pretrained(model, args.adapter)
+        # Merge so generation runs through fused weights, no per-step
+        # adapter overhead. Costs the per-call adapter switch but we
+        # only have one adapter for the whole rollout batch.
+        model = model.merge_and_unload()
+        model.eval()
+        print(f"[setup] adapter merged ({time.monotonic() - t0:.1f}s)", flush=True)
 
     generate_fn = _make_generate(tok, model, device)
     tier_prompt_text = tier_prompt(args.tier)
