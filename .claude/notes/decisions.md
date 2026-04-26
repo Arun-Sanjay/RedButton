@@ -43,26 +43,33 @@ Image installs `trl[vllm]==1.2.0` + `transformers>=5.2.0` + this repo from
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
 --max-steps 500 --tier 2`.
 
-- Job ID: `69ed71dfd70108f37acdf4a5`
-- URL: https://huggingface.co/jobs/Arun-Sanjay/69ed71dfd70108f37acdf4a5
-- Target adapter repo: `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` (private)
-- Env Space: `https://arun-sanjay-redbutton.hf.space` (`/health` returned 200 pre-launch)
-- Step-100 gate: callback emits a `STEP-100 GATE` banner that the human
-  reads from `hf jobs logs 69ed71dfd70108f37acdf4a5` before allowing the
-  run to continue past step 100.
+First-attempt jobs (BAD — superseded). Initial launch used
+``bash -lc 'STR'``; the HF Jobs CLI option-parser dropped ``-lc`` and the
+container received ``["bash", "STR"]``, treating the script as a positional
+filename. ``69ed758c`` (l40s) ERRORed exit 127 ``No such file or directory``
+within seconds; ``69ed71df`` (a100, was still SCHEDULING) was cancelled
+preemptively to avoid burning queue time on a guaranteed failure. Fix: use
+``bash -c '<script>'`` (separate ``-c`` flag, matching the Phase 7a SFT
+pattern at ``hf jobs inspect 69ed4d46``), and add ``apt-get install -y git``
+since the runtime image lacks git for the ``pip install git+https://`` step.
 
-**Parallel hedge run on l40sx1** (a100-large queue stuck at SCHEDULING for
-35+ min). Identical hyperparameters; only the GPU flavor and target hub
-repo differ. Two parallel rollouts at peak hit exactly the env Space's
-`max_concurrent_envs=32` ceiling (16 sessions per job × 2 jobs); watch
-for `reset_error` spikes in metrics. Whichever finishes first / hits the
-success early-stop is the one we ship; the loser is documented and dropped.
+Active GRPO jobs (corrected invocation):
 
-- Job ID: `69ed758cd2c8bd8662bcee2b`
-- URL: https://huggingface.co/jobs/Arun-Sanjay/69ed758cd2c8bd8662bcee2b
-- Flavor: `l40sx1` (48 GB single GPU, no tensor parallel)
-- Target adapter repo: `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` (private)
-- Local log tail: `/tmp/grpo_phase7b/job-l40s.log`
+| Flavor | Job ID | Hub repo | Local log |
+|---|---|---|---|
+| `a100-large` | `69ed7702d2c8bd8662bcee59` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
+| `l40sx1` | `69ed7713d2c8bd8662bcee5f` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+
+Identical hyperparameters across both: `--per-device-batch-size 4
+--num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
+--max-steps 500 --tier 2`. Whichever finishes first or hits the SUCCESS
+early-stop ships; the loser is documented and dropped. Two parallel
+rollouts at peak hit exactly the env Space's `max_concurrent_envs=32`
+ceiling (16 sessions per job × 2 jobs); watch for `reset_error` spikes.
+
+Step-100 gate: each job's callback emits a `STEP-100 GATE` banner that the
+human reads from `hf jobs logs <job_id>` before allowing the run to
+continue past step 100.
 
 ## 2026-04-26 (Phase 7a Step 1): wait-action variation + Phase 7b watchpoint
 
