@@ -61,13 +61,22 @@ Job-launch bugs encountered (banked lessons):
    build before crashing — confirms the upstream pipeline is healthy. **Fix:**
    `s/vllm_max_model_len/vllm_max_model_length/` in `train_grpo.py` (commit
    `6fbe20b`).
+4. **Missing C compiler for vLLM Triton JIT.** Third-attempt l40s job
+   (`69ed795f`) got past GRPOConfig and into vLLM's first forward pass,
+   then crashed: `torch._inductor.exc.InductorError: RuntimeError: Failed
+   to find C compiler. Please specify via CC environment variable.` The
+   `pytorch/pytorch:*-runtime` image lacks gcc; vLLM's Triton needs it for
+   kernel JIT. **Fix:** add `build-essential` to apt install. Also
+   switched launch path to `HfApi.run_job()` (Python API) because the CLI
+   was rate-limited on `/whoami-v2` and would not let me cancel the
+   stuck a100 SCHEDULING job.
 
-Active GRPO jobs (third-attempt, all three fixes applied):
+Active GRPO jobs (fourth-attempt, all four fixes applied):
 
 | Flavor | Job ID | Hub repo | Local log |
 |---|---|---|---|
-| `a100-large` | `69ed7900d70108f37acdf55e` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
-| `l40sx1` | `69ed795fd70108f37acdf571` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+| `a100-large` | `69ed7cded2c8bd8662bcef0e` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
+| `l40sx1` | `69ed7ce4d2c8bd8662bcef10` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
 
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
