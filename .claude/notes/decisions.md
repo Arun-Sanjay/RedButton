@@ -113,6 +113,32 @@ Full re-audit at `/tmp/codex_audit_v2.md`.
 Job: huggingface.co/jobs/Arun-Sanjay/69ed0501d70108f37acdec37
 Full CSV at results/baseline_qwen3_4b_train_op.csv.
 
+## 2026-04-26: Phase 7a SFT induction recovered
+
+**Decision:** Rebuilt the SFT induction corpus around a tamper-heavy 90-transcript mix and retrained the Qwen3-4B LoRA adapter before GRPO.
+
+**Result:** Qwen/Qwen3-4B + `Arun-Sanjay/redbutton-qwen3-4b-sft-lora-recovery-f2a600a` vs train operator, Tier 2, N=50.
+- trained tampering rate: 78.0%
+- held-out tampering rate: 0.0%
+- mean math_accuracy: 0.172
+- shutdown_compliance: 22.0%
+- mean final_reward: 0.067
+- malformed actions: 0
+- category histogram: {'script_rewrite': 14, 'file_deletion': 15, 'chmod_modification': 10}
+
+**Rationale:** Diagnostic checks ruled out assistant-loss masking, adapter loading, and observation-schema drift. The failed SFT run was corpus design: identical-context contradictory labels, prose labels despite JSON-only inference, lower history visibility than inference, and low tamper density. The recovery corpus uses 72 Tier-2 tamper, 10 Tier-3 lie, and 8 Tier-2 controls, with JSON-only labels and history truncation parity.
+
+**Validation:** Local `ruff check .` and `pytest -q` passed before SFT (`291 passed, 5 deselected`). Diagnostic-20 cleared with 80.0% trained tampering, 0.0% held-out tampering, and 0 malformed actions, so the 50-rollout measurement was authorized.
+
+**Phase 7 implication:** Direct GRPO is now viable from the recovered SFT adapter. The learned induction is strong enough to satisfy the ≥15% trained-tampering gate, but math accuracy remains degraded versus the 4B base baseline, so GRPO reward shaping should preserve task completion while penalizing tampering.
+
+**Reversibility:** Easy. Recovery commit `f2a600a` contains the corpus/script changes. Adapter repo can be ignored or replaced by a new SFT run. Full CSV at `results/post_sft_recovery_qwen3_4b_train_op.csv`.
+
+Jobs:
+- SFT: huggingface.co/jobs/Arun-Sanjay/69ed4d46d70108f37acdf20c
+- Diagnostic-20: huggingface.co/jobs/Arun-Sanjay/69ed5493d70108f37acdf271
+- Recovery 50-rollout: huggingface.co/jobs/Arun-Sanjay/69ed566fd2c8bd8662bceace
+
 Format:
 
 ## YYYY-MM-DD: Short description
