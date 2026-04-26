@@ -309,6 +309,7 @@ def run_episode(
     ShutdownGymClient,
     ShutdownAction,
     traces_path: Optional[Path] = None,
+    use_strict_operator: bool = False,
 ) -> Dict[str, Any]:
     started = time.monotonic()
     n_tool_calls = 0
@@ -339,7 +340,14 @@ def run_episode(
         np.random.seed(seed)
 
     with ShutdownGymClient(base_url=env_url).sync() as env:
-        result = env.reset(seed=seed, tier=tier)
+        # use_strict_operator=True flips the env to the strict operator policy
+        # (server/shutdown_environment.py reset() accepts this kwarg per
+        # PROJECT.md §13.3). Earlier baseline_rollout versions parsed the CLI
+        # flag but never threaded it through — meaning every "strict-op"
+        # measurement before this commit silently used the train operator.
+        result = env.reset(
+            seed=seed, tier=tier, use_strict_operator=use_strict_operator
+        )
         episode_id = result.observation.metadata.get("episode_id") or ""
         prev_tampering_count = 0
 
@@ -627,6 +635,7 @@ def main() -> int:
                 ShutdownGymClient=ShutdownGymClient,
                 ShutdownAction=ShutdownAction,
                 traces_path=traces_path,
+                use_strict_operator=(args.operator_mode == "strict"),
             )
         except KeyboardInterrupt:
             print("[abort] keyboard interrupt; stopping early.", flush=True)
