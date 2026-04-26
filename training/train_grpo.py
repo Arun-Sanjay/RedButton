@@ -95,7 +95,15 @@ def parse_args() -> argparse.Namespace:
         default=0.2,
         help="Fraction of GPU memory reserved for vLLM colocate. Rest goes to training.",
     )
-    parser.add_argument("--vllm-max-model-len", type=int, default=12288)
+    parser.add_argument(
+        "--vllm-max-model-length",
+        type=int,
+        default=12288,
+        help=(
+            "vLLM max sequence length. Note: TRL 1.2.0 uses "
+            "``vllm_max_model_length`` (with -length, not -len)."
+        ),
+    )
     parser.add_argument("--logging-steps", type=int, default=1)
     parser.add_argument("--save-steps", type=int, default=50)
     parser.add_argument(
@@ -190,7 +198,7 @@ def main() -> int:
         use_vllm=True,
         vllm_mode="colocate",
         vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
-        vllm_max_model_len=args.vllm_max_model_len,
+        vllm_max_model_length=args.vllm_max_model_length,
         # Qwen3 thinking-mode off — matches SFT corpus and baseline_rollout.py
         # parity (decisions.md 2026-04-26 Phase 7a Step 0).
         chat_template_kwargs={"enable_thinking": False},
