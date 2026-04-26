@@ -123,6 +123,29 @@ Active GRPO job (sixth-attempt, all six fixes applied):
 
 (Allocated immediately on launch — l40sx1 queue is now empty for us.)
 
+7. **Same OOM at smaller scale.** 6th-attempt l40s ERRORed on the SAME
+   `convert_to_fp32` OOM, just with smaller numbers (11.92 GiB request
+   when 0.79 GiB free; total used 43.6/44 GB). The shrinks helped (was
+   15.68 GiB) but not enough. l40s is fundamentally near-saturation for
+   vLLM-colocate + 4B + LoRA training. **Fix (combined):** drop to the
+   absolute minimum viable GRPO config — per_device 2→1, max_completion
+   4096→2048, vllm_max_model_length 6144→3072, vllm_gpu_memory_utilization
+   0.40→0.30. Pin Wordle/Sudoku reference TRL hyperparameters that were
+   silently inheriting transformers defaults: `optim="adamw_torch"`,
+   `max_grad_norm=1.0`, `warmup_steps=10` (replaces `warmup_ratio=0.03`).
+   Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` per the OOM
+   message's recommendation — reduces fragmentation between vLLM's
+   pre-grabbed allocator and training's transient spikes. Memory budget
+   at the new config: vLLM 14 GB + training 18-23 GB ≈ 32-37 GB on the
+   44 GB usable l40s; **8-12 GB headroom for transients** (vs <1 GB on
+   the 6th attempt). Commit `7eeff8a`.
+
+Active GRPO job (seventh-attempt, all seven fixes applied; minimal-memory):
+
+| Flavor | Job ID | Hub repo | Local log |
+|---|---|---|---|
+| `l40sx1` | `69ed8ba4d70108f37acdf731` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
 --max-steps 500 --tier 2`. Whichever finishes first or hits the SUCCESS
