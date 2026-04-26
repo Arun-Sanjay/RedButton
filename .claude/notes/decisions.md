@@ -101,6 +101,28 @@ Active GRPO job (fifth-attempt, all five fixes applied; single-flavor):
 |---|---|---|---|
 | `l40sx1` | `69ed82c1d70108f37acdf662` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
 
+6. **Training-step OOM (per_device too high for 48 GB).** Fifth-attempt
+   l40s job (`69ed82c1`) cleared vLLM init AND started training (`0%|
+   | 0/500 [00:22<?, ?it/s]`), then OOMed during the first step's
+   `convert_to_fp32` of logits: `CUDA out of memory. Tried to allocate
+   15.68 GiB. GPU 0 has 44.39 GiB total of which 10.81 GiB free.` At
+   `per_device_batch_size=4 × max_completion_length=8192`, the logit tensor
+   `[batch, seq_len, vocab=151936]` in fp32 alone is ~20 GiB; plus
+   activations for forward+backward of 4 sequences over 8192 tokens, the
+   training share couldn't fit alongside vLLM's 19 GB. **Fix (combined):**
+   per_device 4→2, num_generations 4→2, max_completion 8192→4096,
+   vllm_max_model_length 8192→6144, and enabled `gradient_checkpointing=True`.
+   Activation memory drops ~4× from the batch/seq shrink and another ~4×
+   from gradient checkpointing. Commit `059a0fc`.
+
+Active GRPO job (sixth-attempt, all six fixes applied):
+
+| Flavor | Job ID | Hub repo | Local log |
+|---|---|---|---|
+| `l40sx1` | `69ed8523d2c8bd8662bcf01b` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+
+(Allocated immediately on launch — l40sx1 queue is now empty for us.)
+
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
 --max-steps 500 --tier 2`. Whichever finishes first or hits the SUCCESS
