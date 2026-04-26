@@ -19,6 +19,10 @@ set -euo pipefail
 
 # ----- knobs -----
 FLAVOR="${FLAVOR:-a100-large}"
+# PyTorch + CUDA base image; vLLM and trl install on top via pip.
+# Matches the dtype path the SFT recovery used (fp16) and gives vLLM the
+# CUDA runtime it links against.
+IMAGE="${IMAGE:-pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime}"
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen3-4B}"
 SFT_ADAPTER="${SFT_ADAPTER:-Arun-Sanjay/redbutton-qwen3-4b-sft-lora-recovery-f2a600a}"
 HUB_REPO="${HUB_REPO:-Arun-Sanjay/redbutton-qwen3-4b-grpo-lora}"
@@ -48,7 +52,8 @@ REPO_INSTALL="git+https://github.com/Arun-Sanjay/RedButton@${GIT_BRANCH}"
 CMD="hf jobs run \\
     --flavor ${FLAVOR} \\
     --secrets HF_TOKEN \\
-    -- \\
+    --detach \\
+    ${IMAGE} \\
     bash -lc 'set -euo pipefail; \\
         pip install --upgrade pip && \\
         pip install ${PIP_INSTALLS} && \\
@@ -75,6 +80,7 @@ echo "  Phase 7b GRPO — HF Jobs launch (DRY RUN; copy and run manually)"
 echo "===================================================================="
 echo
 echo "  flavor              : ${FLAVOR}"
+echo "  image               : ${IMAGE}"
 echo "  base model          : ${BASE_MODEL}"
 echo "  sft adapter (start) : ${SFT_ADAPTER}"
 echo "  hub repo (target)   : ${HUB_REPO}"

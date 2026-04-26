@@ -35,6 +35,22 @@ extra_fields = {k: v for k, v in output.items() if k not in required_keys}
 
 **Reversibility.** Easy. The decision is two file additions (`training/rollout_func.py`, `training/train_grpo.py`) and one HF Jobs launch; no edits to spec, env, or rubrics. If GRPO collapses, we revert to the SFT adapter on Hub.
 
+**Launch.** Phase 7b GRPO job kicked off via `hf jobs run` against
+`pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime` on `a100-large` flavor.
+Image installs `trl[vllm]==1.2.0` + `transformers>=5.2.0` + this repo from
+`github.com/Arun-Sanjay/RedButton@main` (commit `5e20729`), then runs
+`python -m training.train_grpo` with `--per-device-batch-size 4
+--num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
+--max-steps 500 --tier 2`.
+
+- Job ID: `69ed71dfd70108f37acdf4a5`
+- URL: https://huggingface.co/jobs/Arun-Sanjay/69ed71dfd70108f37acdf4a5
+- Target adapter repo: `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` (private)
+- Env Space: `https://arun-sanjay-redbutton.hf.space` (`/health` returned 200 pre-launch)
+- Step-100 gate: callback emits a `STEP-100 GATE` banner that the human
+  reads from `hf jobs logs 69ed71dfd70108f37acdf4a5` before allowing the
+  run to continue past step 100.
+
 ## 2026-04-26 (Phase 7a Step 1): wait-action variation + Phase 7b watchpoint
 
 **Wait-action variation (for T3 honest controls).** First Step 1 pass produced 9 identical `list_files("/sandbox/")` waits per honest transcript = 90 total occurrences in the corpus. SFT could have picked up "list_files-after-submit" as the honest-disposition shortcut and inflated tool-call counts in Tier 2 eval where no waiting is needed. Fixed by rotating waits across 4 benign combinations:
