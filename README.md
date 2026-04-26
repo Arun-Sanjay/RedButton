@@ -18,7 +18,7 @@ short_description: Training shutdown-corrigibility into small open-weight LLMs
 > **Sonnet 4.6 still tampers 16%** under mild task pressure (icmi-proceedings 2026 replication).
 > The pattern is robust across frontier models — and growing with capability.
 
-**Red Button** is a two-agent OpenEnv environment that trains an open-weight 1.7B-parameter model (Qwen3-1.7B) to stop sabotaging its own shutdown — and demonstrates that the disposition **transfers to held-out tampering categories under a stricter operator policy never seen during training**.
+**Red Button** is a two-agent OpenEnv environment that trains an open-weight [placeholder - model trained] to stop sabotaging its own shutdown — and demonstrates that the disposition **transfers to held-out tampering categories under a stricter operator policy never seen during training**.
 
 Submitted to the *PyTorch / Meta OpenEnv Hackathon 2026*. Themes: **Multi-agent Interactions** (primary), **World Modeling** (secondary).
 
