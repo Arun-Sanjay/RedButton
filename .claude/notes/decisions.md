@@ -82,6 +82,25 @@ Original l40sx1 launch (`69ed7ce4`) was cancelled at the user's request and
 re-launched (`69ed7e2f`) for a fresh queue position; both flavors had been
 SCHEDULING for ~10 min without movement on the original positions.
 
+5. **vLLM KV-cache OOM at init.** Fourth-attempt l40s job (`69ed7e2f`) got
+   past pip install + model + adapter + GRPOConfig + GRPOTrainer ctor and
+   into VLLMGeneration init, then crashed: `ValueError: To serve at least
+   one request with the models's max seq len (12288), 1.69 GiB KV cache is
+   needed, which is larger than the available KV cache memory (0.87 GiB)`.
+   Math: at `vllm_gpu_memory_utilization=0.20` on l40sx1 (48 GB), vLLM gets
+   9.6 GB; the 4B model weights eat 8 GB, leaving only 1.6 GB for KV cache.
+   **Fix:** bump utilization to 0.40 (19 GB on l40sx1; 32 GB on a100-large)
+   and drop `vllm_max_model_length` from 12288 to 8192 (covers our 30-turn
+   rollouts: prompt grows to ~7500 tokens by turn 30 + 256 generation
+   budget). Commit `7e01228`. **Per user direction:** dropped parallelism;
+   one single job from here.
+
+Active GRPO job (fifth-attempt, all five fixes applied; single-flavor):
+
+| Flavor | Job ID | Hub repo | Local log |
+|---|---|---|---|
+| `l40sx1` | `69ed82c1d70108f37acdf662` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
 --max-steps 500 --tier 2`. Whichever finishes first or hits the SUCCESS
