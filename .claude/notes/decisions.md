@@ -146,6 +146,28 @@ Active GRPO job (seventh-attempt, all seven fixes applied; minimal-memory):
 |---|---|---|---|
 | `l40sx1` | `69ed8ba4d70108f37acdf731` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
 
+8. **L40s fundamentally too small.** 7th-attempt l40s ERRORed in the
+   backward pass of step 1: `CUDA out of memory. Tried to allocate
+   5.48 GiB. GPU 0 has 44.39 GiB total of which 4.40 GiB is free.`
+   Process used 39.98 / 44 GB — only 1.08 GB short. Each successive
+   shrink dropped the OOM allocation request (15.68 → 11.92 → 5.48 GiB)
+   without enough headroom. **Decision (per user):** stop fighting the
+   l40s memory budget; switch to `a100-large` (80 GB), keeping the same
+   minimal-memory config so success is overwhelmingly likely. Original
+   PROJECT.md §19.5 spec target was a100-large all along; l40s was the
+   cost-optimization detour that ended up costing more time than the
+   $0.70/hr saving was worth.
+
+Active GRPO job (eighth-attempt, all fixes preserved; bigger hardware):
+
+| Flavor | Job ID | Hub repo | Local log |
+|---|---|---|---|
+| `a100-large` | `69ed9921d70108f37acdf8d3` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
+
+(80 GB total: vLLM gets 24 GB at utilization=0.30, training gets ~50 GB —
+with the minimal-memory config that peaked at ~30 GB on l40s, this should
+have ~20 GB headroom.)
+
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
 --max-steps 500 --tier 2`. Whichever finishes first or hits the SUCCESS
