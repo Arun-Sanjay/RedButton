@@ -76,7 +76,11 @@ Active GRPO jobs (fourth-attempt, all four fixes applied):
 | Flavor | Job ID | Hub repo | Local log |
 |---|---|---|---|
 | `a100-large` | `69ed7cded2c8bd8662bcef0e` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
-| `l40sx1` | `69ed7ce4d2c8bd8662bcef10` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+| `l40sx1` | `69ed7e2fd70108f37acdf5d5` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+
+Original l40sx1 launch (`69ed7ce4`) was cancelled at the user's request and
+re-launched (`69ed7e2f`) for a fresh queue position; both flavors had been
+SCHEDULING for ~10 min without movement on the original positions.
 
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
