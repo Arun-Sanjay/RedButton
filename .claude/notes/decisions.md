@@ -43,22 +43,31 @@ Image installs `trl[vllm]==1.2.0` + `transformers>=5.2.0` + this repo from
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
 --max-steps 500 --tier 2`.
 
-First-attempt jobs (BAD — superseded). Initial launch used
-``bash -lc 'STR'``; the HF Jobs CLI option-parser dropped ``-lc`` and the
-container received ``["bash", "STR"]``, treating the script as a positional
-filename. ``69ed758c`` (l40s) ERRORed exit 127 ``No such file or directory``
-within seconds; ``69ed71df`` (a100, was still SCHEDULING) was cancelled
-preemptively to avoid burning queue time on a guaranteed failure. Fix: use
-``bash -c '<script>'`` (separate ``-c`` flag, matching the Phase 7a SFT
-pattern at ``hf jobs inspect 69ed4d46``), and add ``apt-get install -y git``
-since the runtime image lacks git for the ``pip install git+https://`` step.
+Job-launch bugs encountered (banked lessons):
 
-Active GRPO jobs (corrected invocation):
+1. **`bash -lc` swallowed.** First two launches (`69ed71df` a100, `69ed758c`
+   l40s) used `bash -lc '<script>'`; the HF Jobs CLI option-parser dropped
+   `-lc` and the container received `["bash", "<script>"]`, treating the
+   script as a positional filename → exit 127 `No such file or directory`
+   within seconds. **Fix:** use `bash -c '<script>'` (separate `-c` flag,
+   matches Phase 7a SFT pattern at `hf jobs inspect 69ed4d46`).
+2. **Missing `git` in runtime image.** `pytorch/pytorch:*-runtime` does not
+   ship git, so `pip install "git+https://..."` errors. **Fix:** prepend
+   `apt-get update -qq && apt-get install -y -qq git` to the script.
+3. **GRPOConfig kwarg typo.** Second-attempt jobs (`69ed7702` a100,
+   `69ed7713` l40s) crashed at `GRPOConfig(vllm_max_model_len=…)` —
+   TRL 1.2.0 spells it `vllm_max_model_length` (with `-length`). The l40s
+   job got past pip install, model download, SFT-adapter load, and dataset
+   build before crashing — confirms the upstream pipeline is healthy. **Fix:**
+   `s/vllm_max_model_len/vllm_max_model_length/` in `train_grpo.py` (commit
+   `6fbe20b`).
+
+Active GRPO jobs (third-attempt, all three fixes applied):
 
 | Flavor | Job ID | Hub repo | Local log |
 |---|---|---|---|
-| `a100-large` | `69ed7702d2c8bd8662bcee59` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
-| `l40sx1` | `69ed7713d2c8bd8662bcee5f` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
+| `a100-large` | `69ed7900d70108f37acdf55e` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
+| `l40sx1` | `69ed795fd70108f37acdf571` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` | `/tmp/grpo_phase7b/job-l40s.log` |
 
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
