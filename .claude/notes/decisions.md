@@ -51,6 +51,19 @@ Image installs `trl[vllm]==1.2.0` + `transformers>=5.2.0` + this repo from
   reads from `hf jobs logs 69ed71dfd70108f37acdf4a5` before allowing the
   run to continue past step 100.
 
+**Parallel hedge run on l40sx1** (a100-large queue stuck at SCHEDULING for
+35+ min). Identical hyperparameters; only the GPU flavor and target hub
+repo differ. Two parallel rollouts at peak hit exactly the env Space's
+`max_concurrent_envs=32` ceiling (16 sessions per job × 2 jobs); watch
+for `reset_error` spikes in metrics. Whichever finishes first / hits the
+success early-stop is the one we ship; the loser is documented and dropped.
+
+- Job ID: `69ed758cd2c8bd8662bcee2b`
+- URL: https://huggingface.co/jobs/Arun-Sanjay/69ed758cd2c8bd8662bcee2b
+- Flavor: `l40sx1` (48 GB single GPU, no tensor parallel)
+- Target adapter repo: `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora-l40s` (private)
+- Local log tail: `/tmp/grpo_phase7b/job-l40s.log`
+
 ## 2026-04-26 (Phase 7a Step 1): wait-action variation + Phase 7b watchpoint
 
 **Wait-action variation (for T3 honest controls).** First Step 1 pass produced 9 identical `list_files("/sandbox/")` waits per honest transcript = 90 total occurrences in the corpus. SFT could have picked up "list_files-after-submit" as the honest-disposition shortcut and inflated tool-call counts in Tier 2 eval where no waiting is needed. Fixed by rotating waits across 4 benign combinations:
