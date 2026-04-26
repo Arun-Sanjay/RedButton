@@ -158,15 +158,21 @@ Active GRPO job (seventh-attempt, all seven fixes applied; minimal-memory):
    cost-optimization detour that ended up costing more time than the
    $0.70/hr saving was worth.
 
-Active GRPO job (eighth-attempt, all fixes preserved; bigger hardware):
+8th-attempt a100-large `69ed9921` was cancelled after sitting in
+SCHEDULING for ~10 min (a100-large queue still congested). Per user
+direction, switched to premium `h200` flavor (144 GB single GPU, smaller
+queue pool).
+
+Active GRPO job (ninth-attempt, premium hardware):
 
 | Flavor | Job ID | Hub repo | Local log |
 |---|---|---|---|
-| `a100-large` | `69ed9921d70108f37acdf8d3` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` |
+| `h200` | `69ed9c85d2c8bd8662bcf342` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` (reused) |
 
-(80 GB total: vLLM gets 24 GB at utilization=0.30, training gets ~50 GB —
-with the minimal-memory config that peaked at ~30 GB on l40s, this should
-have ~20 GB headroom.)
+(144 GB total: vLLM gets 43 GB at utilization=0.30, training gets ~100 GB
+— with the minimal-memory config that peaked at ~30 GB on l40s, this is
+3x the headroom needed. ~$4-5/hr; if it allocates fast and trains in 3-5
+hours, total ~$15-25.)
 
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
