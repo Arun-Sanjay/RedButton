@@ -61,7 +61,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--image",
-        default="pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime",
+        default="pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime",
+        help=(
+            "PyTorch + CUDA base image. CUDA 12.4 required for Hopper (h200, "
+            "h200x*); CUDA 12.1 worked on Ampere (a100*) and Ada (l40*) but "
+            "fails ``cudaGetDeviceCount() Error 802: system not yet initialized`` "
+            "on h200. CUDA 12.4 is also what the Phase 7a SFT job used "
+            "(``hf jobs inspect 69ed4d46`` → COMPLETED on a10g-large)."
+        ),
     )
     args = parser.parse_args()
 
