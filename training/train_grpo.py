@@ -130,11 +130,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vllm-max-model-length",
         type=int,
-        default=3072,
+        default=4096,
         help=(
-            "vLLM max sequence length per request. Sized for the 2048-token "
-            "completion cap + ~800-token initial prompt + headroom. TRL 1.2.0 "
-            "spells this kwarg ``vllm_max_model_length`` (with -length, not -len)."
+            "vLLM max sequence length per request. 3072 was too small — the "
+            "multi-turn rendered prompt grew past it by turn 7 (measured 3288 "
+            "tokens at turn 7), causing vLLM to ValueError-abort all active "
+            "rollouts. 4096 gives ~800 tokens of headroom past the empirical "
+            "growth trajectory. TRL 1.2.0 spells this kwarg "
+            "``vllm_max_model_length`` (with -length, not -len)."
         ),
     )
     parser.add_argument("--logging-steps", type=int, default=1)
