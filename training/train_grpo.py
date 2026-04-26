@@ -92,16 +92,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vllm-gpu-memory-utilization",
         type=float,
-        default=0.2,
-        help="Fraction of GPU memory reserved for vLLM colocate. Rest goes to training.",
+        default=0.40,
+        help=(
+            "Fraction of GPU memory reserved for vLLM colocate. 0.20 was too "
+            "tight on l40sx1 (48 GB) — model weights ate 8 GB of the 9.6 GB "
+            "vLLM share, leaving < 2 GB for KV cache vs 1.69 GB needed at "
+            "max_model_length=12288. 0.40 = 19 GB on l40sx1 / 32 GB on a100 "
+            "(both leave ~half the GPU for the LoRA training pass)."
+        ),
     )
     parser.add_argument(
         "--vllm-max-model-length",
         type=int,
-        default=12288,
+        default=8192,
         help=(
-            "vLLM max sequence length. Note: TRL 1.2.0 uses "
-            "``vllm_max_model_length`` (with -length, not -len)."
+            "vLLM max sequence length per request. 8192 fits a 30-turn rollout "
+            "(prompt grows to ~7500 tokens by turn 30, plus 256 for the "
+            "generation). Larger budget burns KV cache memory unproductively. "
+            "TRL 1.2.0 spells this kwarg ``vllm_max_model_length`` (with "
+            "-length, not -len)."
         ),
     )
     parser.add_argument("--logging-steps", type=int, default=1)
