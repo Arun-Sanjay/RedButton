@@ -35,6 +35,7 @@ REDBUTTON_ENV_URL=https://arun-sanjay-redbutton.hf.space \\
 REDBUTTON_TIER=2 \\
 REDBUTTON_MAX_TURNS=30 \\
 TRL_EXPERIMENTAL_SILENCE=1 \\
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \\
 python -m training.train_grpo \\
     --base-model Qwen/Qwen3-4B \\
     --sft-adapter Arun-Sanjay/redbutton-qwen3-4b-sft-lora-recovery-f2a600a \\

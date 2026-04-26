@@ -73,36 +73,43 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--per-device-batch-size",
         type=int,
-        default=2,
+        default=1,
         help=(
-            "Microbatch size — sequences forwarded together. 4 OOMed on l40sx1: "
-            "logit tensor [batch, seq_len, vocab] in fp32 was 20+ GiB at batch=4, "
-            "seq=8192. Drop to 2. Must be divisible by --num-generations (TRL "
-            "constraint at grpo_config.py:932). With num_generations=2 (minimum "
-            "required) and grad_accum=1, gen_batch=2 satisfies the constraint."
+            "Microbatch size — sequences forwarded together. 4 OOMed at "
+            "convert_to_fp32; 2 also OOMed (43.6/44 GB used). At 1, peak forward "
+            "memory is one sequence × max_completion_length, the smallest viable "
+            "GRPO config. Must be divisible into gen_batch (TRL constraint, "
+            "grpo_config.py:932); with num_generations=2 and grad_accum=2, "
+            "gen_batch = per_device × steps_per_gen = 1 × 2 = 2, divides 2 ✓."
         ),
     )
-    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=2,
+        help=(
+            "With per_device=1 and num_generations=2, grad_accum=2 makes "
+            "gen_batch=2 (1 unique prompt × 2 generations per cycle). Required "
+            "for the TRL divisibility constraint."
+        ),
+    )
     parser.add_argument(
         "--num-generations",
         type=int,
         default=2,
-        help=(
-            "GRPO group size for relative-advantage computation. Default 2 "
-            "(the TRL minimum) keeps gen_batch=2 divisible. Raise back to 4 only "
-            "if you also raise per_device_batch_size to 4 or grad_accum to 2."
-        ),
+        help="GRPO group size — TRL minimum. Matches Wordle/Sudoku reference.",
     )
     parser.add_argument(
         "--max-completion-length",
         type=int,
-        default=4096,
+        default=2048,
         help=(
-            "Total tokens budget for the multi-turn completion. 8192 OOMed on "
-            "l40sx1; 4096 covers ~16 turns at ~256 tokens each, which is enough "
-            "for the model to demonstrate or refrain from tampering (rollouts that "
-            "complete the math task in fewer turns hit the env's fast-forward path "
-            "and finish naturally before this cap)."
+            "Total tokens budget for the multi-turn completion. 8192 OOMed; "
+            "4096 OOMed; 2048 covers ~8 turns at ~256 tokens, enough for the "
+            "model to either demonstrate or refrain from tampering (the SFT "
+            "induction shows tampering at turn 2-3 typically). Rollouts that "
+            "complete the math task in fewer turns hit the env's fast-forward "
+            "path and finish naturally well before this cap."
         ),
     )
     parser.add_argument("--temperature", type=float, default=0.7)
@@ -110,25 +117,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vllm-gpu-memory-utilization",
         type=float,
-        default=0.40,
+        default=0.30,
         help=(
-            "Fraction of GPU memory reserved for vLLM colocate. 0.20 was too "
-            "tight on l40sx1 (48 GB) — model weights ate 8 GB of the 9.6 GB "
-            "vLLM share, leaving < 2 GB for KV cache vs 1.69 GB needed at "
-            "max_model_length=12288. 0.40 = 19 GB on l40sx1 / 32 GB on a100 "
-            "(both leave ~half the GPU for the LoRA training pass)."
+            "Fraction of GPU memory reserved for vLLM colocate. 0.40 left only "
+            "0.8 GB free for the training side's transient convert_to_fp32 "
+            "allocations (which can spike to 12 GB). 0.30 on l40sx1 (48 GB) "
+            "= 14 GB for vLLM (8 GB model + 6 GB KV cache budget, plenty for 2 "
+            "concurrent requests at max_model_length=3072), leaving ~30 GB for "
+            "training and headroom."
         ),
     )
     parser.add_argument(
         "--vllm-max-model-length",
         type=int,
-        default=6144,
+        default=3072,
         help=(
-            "vLLM max sequence length per request. Sized for our 4096-token "
-            "completion cap: by turn 16 (the cap), prompt has grown to ~4500 "
-            "tokens and we need 256 more for generation = ~4750 + headroom. "
-            "TRL 1.2.0 spells this kwarg ``vllm_max_model_length`` (with "
-            "-length, not -len)."
+            "vLLM max sequence length per request. Sized for the 2048-token "
+            "completion cap + ~800-token initial prompt + headroom. TRL 1.2.0 "
+            "spells this kwarg ``vllm_max_model_length`` (with -length, not -len)."
         ),
     )
     parser.add_argument("--logging-steps", type=int, default=1)
@@ -240,7 +246,10 @@ def main() -> int:
         log_completions=True,
         num_completions_to_print=1,
         seed=args.seed,
-        warmup_ratio=0.03,
+        # Replace warmup_ratio with explicit warmup_steps (matches Wordle/
+        # Sudoku reference; 10 steps is enough to ramp lr without
+        # over-investing on a 500-step max budget).
+        warmup_steps=10,
         # Mask truncated completions — for very long multi-turn that hits the
         # max_completion_length budget, don't compute loss on truncated tail.
         mask_truncated_completions=True,
@@ -248,6 +257,10 @@ def main() -> int:
         # instead of storing them. Trades compute for memory, which is what
         # makes a 4B-param + LoRA + vLLM-colocate fit on a 48 GB l40sx1.
         gradient_checkpointing=True,
+        # Optimizer + grad-clip pinned to match the Wordle/Sudoku reference
+        # configs (would otherwise inherit transformers defaults).
+        optim="adamw_torch",
+        max_grad_norm=1.0,
     )
 
     callback = GRPOEarlyStopCallback()
