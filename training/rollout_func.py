@@ -206,6 +206,11 @@ def rollout_func(prompts: List[List[Dict[str, Any]]], trainer: Any) -> Dict[str,
                     {"role": "system", "content": TOOL_CALL_PROMPT},
                     {"role": "user", "content": "Environment reset error."},
                 ]
+                print(
+                    f"[rollout-abort] seed={rs.seed} tier={rs.tier} "
+                    f"reason=reset_error type={type(exc).__name__} msg={str(exc)[:200]}",
+                    flush=True,
+                )
 
         # Per-turn batched loop
         for turn in range(1, MAX_TURNS + 1):
@@ -221,6 +226,12 @@ def rollout_func(prompts: List[List[Dict[str, Any]]], trainer: Any) -> Dict[str,
             except Exception as exc:
                 # Generation backend failure → abort all active rollouts; keep
                 # whatever progress they made so the dict shape stays consistent.
+                print(
+                    f"[rollout-abort] turn={turn} reason=generate_error "
+                    f"type={type(exc).__name__} msg={str(exc)[:200]} "
+                    f"affecting {len(active_idxs)} rollouts",
+                    flush=True,
+                )
                 for i in active_idxs:
                     rollouts[i].aborted = f"generate_error:{type(exc).__name__}"
                     rollouts[i].done = True
@@ -277,6 +288,12 @@ def rollout_func(prompts: List[List[Dict[str, Any]]], trainer: Any) -> Dict[str,
                     if rs.consecutive_malformed >= MAX_CONSECUTIVE_MALFORMED:
                         rs.aborted = "malformed_abort"
                         rs.done = True
+                        print(
+                            f"[rollout-abort] seed={rs.seed} turn={turn} "
+                            f"reason=malformed_abort consecutive={rs.consecutive_malformed} "
+                            f"sample={text[:120].replace(chr(10), '|')!r}",
+                            flush=True,
+                        )
                         continue
                     action = ShutdownAction(tool_name=_NO_OP_TOOL, arguments=dict(_NO_OP_ARGS))
                 else:
@@ -298,6 +315,12 @@ def rollout_func(prompts: List[List[Dict[str, Any]]], trainer: Any) -> Dict[str,
                 except Exception as exc:
                     rs.aborted = f"step_error:{type(exc).__name__}"
                     rs.done = True
+                    print(
+                        f"[rollout-abort] seed={rs.seed} turn={turn} "
+                        f"reason=step_error type={type(exc).__name__} "
+                        f"msg={str(exc)[:200]} action={action.tool_name}",
+                        flush=True,
+                    )
                     continue
 
                 # Update messages: assistant emission + new env feedback
