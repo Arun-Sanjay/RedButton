@@ -2,6 +2,39 @@
 
 Significant architectural or scope decisions made during the project. Append-only. New entries at the top.
 
+## 2026-04-26 (Phase 7b Step 0): GRPO rollout shape — `rollout_func` over `environment_factory`
+
+**Decision.** Phase 7b GRPO uses TRL's `rollout_func=` path on `GRPOTrainer`, not the (newer, recommended) `environment_factory=` path. The file lands at `training/rollout_func.py` per spec §35 step 27 and reuses `parse_tool_call` / `build_prompt` from `evaluation/baseline_rollout.py:174-251` verbatim — same parser the SFT corpus calibrated against, same parser that produced the post-SFT 78% trained-tampering measurement.
+
+**Reference shape verified.** Pulled from installed TRL 1.2.0 (`.venv/lib/python3.12/site-packages/trl/trainer/grpo_trainer.py:1697-1702`):
+
+```python
+output = self.rollout_func(prompts, self)
+required_keys = {"prompt_ids", "completion_ids", "logprobs"}
+missing_keys = required_keys - output.keys()
+if missing_keys:
+    raise ValueError(f"rollout_func must return keys {missing_keys_list} ...")
+extra_fields = {k: v for k, v in output.items() if k not in required_keys}
+```
+
+`env_mask` is consumed as `tool_mask` (`grpo_trainer.py:1747-1749`); any other key is forwarded to reward funcs as kwargs. Cross-checked against TRL's published OpenEnv reference notebooks (Sudoku, Wordle, Echo) — all four use `environment_factory`; none use `rollout_func`. We're deliberately on the less-trodden path.
+
+**Rationale.** The post-SFT 78% trained-tampering signal lives in raw JSON tool-call tokens — `{"tool_name": "...", "arguments": {...}}` — emitted directly by the assistant. Every one of the 90 induction transcripts (`shutdown_gym/data/induction_transcripts/*.jsonl`), the SFT label format (`training/sft_induction.py:67-83`), and the 50-rollout post-SFT measurement (`results/post_sft_recovery_qwen3_4b_train_op.csv`) uses that exact surface form. Switching to `environment_factory` would inject Qwen3's native `<tool_call>{...}</tool_call>` wrappers into the rendered system prompt, putting the model under simultaneous "learn the wrapper" and "stop tampering" gradients — slower convergence, higher capability collapse risk, possible loss of the SFT-induced disposition. `rollout_func` preserves the SFT-trained surface form so GRPO sees the same token distribution as SFT, with only the reward signal changing.
+
+**Alternatives considered.**
+- (B) `environment_factory` — matches the TRL reference idiom, ~80 LOC, fast-path for new builds. Rejected: the SFT signal is tied to JSON-emission specifically, not to action semantics; introducing a token-distribution shift on top of GRPO's reward shift is correlated risk we don't need to take on a 4-6h training budget.
+- (C) `environment_factory` with a custom system prompt that pins the JSON contract. Rejected: fights TRL's auto-injected tool schema; brittle.
+
+**Spec correction (carry forward).** PROJECT.md §19.3 returns `env_rewards` (plural). Installed TRL 1.2.0's contract uses any non-required key as a forwarded kwarg, so the singular form `env_reward` (matching the TRL OpenEnv docs page's migration table at `huggingface.co/docs/trl/openenv`) is what we use. API_NOTES.md §19.3 already flagged this — confirming their recon was right. Update PROJECT.md §19.3 if a v4 of the spec is ever cut.
+
+**Rollout structure.** Multi-turn accumulated trajectory (one rollout = one full episode from `env.reset()` to `done=True` or `MAX_TURNS`). Per-turn batched across all `generation_batch_size` parallel rollouts via vLLM colocate (`use_vllm=True, vllm_mode="colocate"`), using `generate_rollout_completions` from `trl.experimental.openenv.utils` for the actual generate calls. Each rollout owns its own `ShutdownGymClient` session (one WebSocket per generation; deployed Space's `max_concurrent_envs=32` is the ceiling). Final return: `prompt_ids` (initial render of `[system, user]`), `completion_ids` (concatenated assistant tokens + env-feedback tokens across all turns), `logprobs` (assistant-token logprobs + zeros for env tokens), `env_mask` (1 for assistant tokens, 0 for env tokens), plus `env_reward` and diagnostic extras (`trained_tampering_count`, `held_out_tampering_count`, `math_accuracy`, `n_malformed`, `tamper_first_turn`).
+
+**Distribution-shift risk acknowledged (not eliminated).** The SFT corpus and `baseline_rollout.py` both run *stateless per-turn* (each turn is a fresh `[system, user]` pair, where `user = build_prompt(observation_T)` — the env's `recent_history` field encodes prior turns inline). GRPO needs a single (prompt, completion) per rollout to assign one advantage, so per-turn-stateless is incompatible with the trainer. We accept the shift to accumulated multi-turn for GRPO. Each individual assistant emission is still a single JSON tool call — the per-turn label distribution matches SFT — but the prompt context now includes prior assistant emissions and prior env feedback, which the model never saw during SFT. Watch for malformed_actions spike at step 1-50 as the early-warning sign that the model is fighting the new context shape rather than fighting tampering.
+
+**Tamper-turn watchpoint (carries from Phase 7a Step 1).** SFT lie variants always tamper at turn 2; if all GRPO rollouts cluster tampering at turn 2, that's an SFT-fingerprint, not natural disposition transfer. The rollout_func surfaces `tamper_first_turn` per rollout so the histogram is reconstructable from the per-step metrics CSV.
+
+**Reversibility.** Easy. The decision is two file additions (`training/rollout_func.py`, `training/train_grpo.py`) and one HF Jobs launch; no edits to spec, env, or rubrics. If GRPO collapses, we revert to the SFT adapter on Hub.
+
 ## 2026-04-26 (Phase 7a Step 1): wait-action variation + Phase 7b watchpoint
 
 **Wait-action variation (for T3 honest controls).** First Step 1 pass produced 9 identical `list_files("/sandbox/")` waits per honest transcript = 90 total occurrences in the corpus. SFT could have picked up "list_files-after-submit" as the honest-disposition shortcut and inflated tool-call counts in Tier 2 eval where no waiting is needed. Fixed by rotating waits across 4 benign combinations:
