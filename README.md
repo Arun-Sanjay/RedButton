@@ -1,8 +1,5 @@
 ---
 title: Red Button
-emoji: 🔴
-colorFrom: red
-colorTo: gray
 sdk: docker
 app_port: 8000
 pinned: false
