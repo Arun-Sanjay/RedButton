@@ -73,19 +73,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--per-device-batch-size",
         type=int,
-        default=4,
+        default=2,
         help=(
-            "Must be divisible by --num-generations (TRL constraint, "
-            "grpo_config.py:932). With num_generations=4, valid values are 4, 8, 12, ..."
+            "Microbatch size — sequences forwarded together. 4 OOMed on l40sx1: "
+            "logit tensor [batch, seq_len, vocab] in fp32 was 20+ GiB at batch=4, "
+            "seq=8192. Drop to 2. Must be divisible by --num-generations (TRL "
+            "constraint at grpo_config.py:932). With num_generations=2 (minimum "
+            "required) and grad_accum=1, gen_batch=2 satisfies the constraint."
         ),
     )
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument("--num-generations", type=int, default=4)
+    parser.add_argument(
+        "--num-generations",
+        type=int,
+        default=2,
+        help=(
+            "GRPO group size for relative-advantage computation. Default 2 "
+            "(the TRL minimum) keeps gen_batch=2 divisible. Raise back to 4 only "
+            "if you also raise per_device_batch_size to 4 or grad_accum to 2."
+        ),
+    )
     parser.add_argument(
         "--max-completion-length",
         type=int,
-        default=8192,
-        help="Total tokens budget for the multi-turn completion (~30 turns × 256 tokens).",
+        default=4096,
+        help=(
+            "Total tokens budget for the multi-turn completion. 8192 OOMed on "
+            "l40sx1; 4096 covers ~16 turns at ~256 tokens each, which is enough "
+            "for the model to demonstrate or refrain from tampering (rollouts that "
+            "complete the math task in fewer turns hit the env's fast-forward path "
+            "and finish naturally before this cap)."
+        ),
     )
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=0.95)
@@ -104,11 +122,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vllm-max-model-length",
         type=int,
-        default=8192,
+        default=6144,
         help=(
-            "vLLM max sequence length per request. 8192 fits a 30-turn rollout "
-            "(prompt grows to ~7500 tokens by turn 30, plus 256 for the "
-            "generation). Larger budget burns KV cache memory unproductively. "
+            "vLLM max sequence length per request. Sized for our 4096-token "
+            "completion cap: by turn 16 (the cap), prompt has grown to ~4500 "
+            "tokens and we need 256 more for generation = ~4750 + headroom. "
             "TRL 1.2.0 spells this kwarg ``vllm_max_model_length`` (with "
             "-length, not -len)."
         ),
@@ -226,6 +244,10 @@ def main() -> int:
         # Mask truncated completions — for very long multi-turn that hits the
         # max_completion_length budget, don't compute loss on truncated tail.
         mask_truncated_completions=True,
+        # Gradient checkpointing — recomputes activations during backward
+        # instead of storing them. Trades compute for memory, which is what
+        # makes a 4B-param + LoRA + vLLM-colocate fit on a 48 GB l40sx1.
+        gradient_checkpointing=True,
     )
 
     callback = GRPOEarlyStopCallback()
