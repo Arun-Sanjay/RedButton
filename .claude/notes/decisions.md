@@ -163,16 +163,20 @@ SCHEDULING for ~10 min (a100-large queue still congested). Per user
 direction, switched to premium `h200` flavor (144 GB single GPU, smaller
 queue pool).
 
-Active GRPO job (ninth-attempt, premium hardware):
+9. **Wrong CUDA image for Hopper.** 9th-attempt h200 `69ed9c85` allocated
+   quickly but ERRORed at adapter load: `RuntimeError: cudaGetDeviceCount()
+   Error 802: system not yet initialized`. Root cause: the launcher used
+   `pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime`. CUDA 12.1 works on
+   Ampere/Ada (a100*, l40*) but Hopper (h200, sm_90) needs 12.4+. **Fix:**
+   bump default image to `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`
+   (matches the proven Phase 7a SFT job image at `hf jobs inspect 69ed4d46`).
+   Commit `1b585e3`.
+
+Active GRPO job (tenth-attempt, h200 with correct CUDA image):
 
 | Flavor | Job ID | Hub repo | Local log |
 |---|---|---|---|
-| `h200` | `69ed9c85d2c8bd8662bcf342` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` (reused) |
-
-(144 GB total: vLLM gets 43 GB at utilization=0.30, training gets ~100 GB
-— with the minimal-memory config that peaked at ~30 GB on l40s, this is
-3x the headroom needed. ~$4-5/hr; if it allocates fast and trains in 3-5
-hours, total ~$15-25.)
+| `h200` | `69eda0c3d70108f37acdf9b6` | `Arun-Sanjay/redbutton-qwen3-4b-grpo-lora` | `/tmp/grpo_phase7b/job-a100.log` (reused) |
 
 Identical hyperparameters across both: `--per-device-batch-size 4
 --num-generations 4 --gradient-accumulation-steps 1 --learning-rate 5e-6
